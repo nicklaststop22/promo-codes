@@ -1,0 +1,6 @@
+{
+  "name": "Coupon & Promo Code Automation Studio",
+  "description": "Interactive in-browser automation suite and Chrome extension toolkit for multi-field coupon, promo code, and wordlist testing with DOM selector inspector, real-time validation logging, and price tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,9 @@
+{
+  "appId": "com.promostudio.applier",
+  "appName": "Promo Codes Applier",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}
