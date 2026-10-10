@@ -42,6 +42,17 @@ export interface QueueConfig {
 
 export type ExecutionStrategy = 'field1_first' | 'field2_first' | 'interleaved' | 'field1_only' | 'field2_only';
 
+export type SequenceActionType = 'field1' | 'button1' | 'field2' | 'button2';
+
+export interface SequenceStep {
+  id: SequenceActionType;
+  action: SequenceActionType;
+  label: string;
+  sublabel: string;
+  enabled: boolean;
+  delayMs?: number;
+}
+
 export interface AutomationSettings {
   intervalMs: number;
   timeoutMs: number;
@@ -51,6 +62,7 @@ export interface AutomationSettings {
   strategy: ExecutionStrategy;
   autoRevertAfterFail: boolean;
   typeSpeedDelayMs: number;
+  sequenceSteps: SequenceStep[]; // User configurable pipeline: reorderable & can toggle on/off
   // Anti-Bot & Rate Limiting Protections
   enableAntiBotProtection: boolean;
   enableHumanJitter: boolean;
@@ -100,8 +112,10 @@ export interface StorePreset {
   name: string;
   category: string;
   description: string;
+  baseUrl: string;
   shippingCost: number;
   items: StoreItem[];
+  catalog?: StoreItem[];
   rules: Record<string, StoreDiscountRule>;
   selectors: SelectorConfig;
 }

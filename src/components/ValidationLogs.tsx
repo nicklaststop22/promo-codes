@@ -11,7 +11,8 @@ import {
   TrendingDown,
   Sparkles,
   Search,
-  Filter
+  Filter,
+  Lock
 } from 'lucide-react';
 import { ValidationLogEntry } from '../types';
 
@@ -19,12 +20,14 @@ interface ValidationLogsProps {
   logs: ValidationLogEntry[];
   onClearLogs: () => void;
   onApplyCodeToSandbox: (field: 'field1' | 'field2', code: string) => void;
+  onLockCode?: (field: 'field1' | 'field2', code: string) => void;
 }
 
 export const ValidationLogs: React.FC<ValidationLogsProps> = ({
   logs,
   onClearLogs,
   onApplyCodeToSandbox,
+  onLockCode,
 }) => {
   const [filter, setFilter] = useState<'all' | 'hits' | 'invalid'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -288,18 +291,34 @@ export const ValidationLogs: React.FC<ValidationLogsProps> = ({
                           )}
                         </button>
                         {isSuccess && (
-                          <button
-                            onClick={() =>
-                              onApplyCodeToSandbox(
-                                entry.fieldTarget === 'field2' ? 'field2' : 'field1',
-                                entry.code
-                              )
-                            }
-                            title="Apply this winning code in sandbox"
-                            className="px-2 py-0.5 bg-emerald-600/30 hover:bg-emerald-600 text-emerald-200 hover:text-white rounded text-[11px] font-medium transition-colors"
-                          >
-                            Apply
-                          </button>
+                          <>
+                            <button
+                              onClick={() =>
+                                onApplyCodeToSandbox(
+                                  entry.fieldTarget === 'field2' ? 'field2' : 'field1',
+                                  entry.code
+                                )
+                              }
+                              title="Apply this winning code in sandbox"
+                              className="px-2 py-0.5 bg-emerald-600/30 hover:bg-emerald-600 text-emerald-200 hover:text-white rounded text-[11px] font-medium transition-colors"
+                            >
+                              Apply
+                            </button>
+                            {onLockCode && (
+                              <button
+                                onClick={() =>
+                                  onLockCode(
+                                    entry.fieldTarget === 'field2' ? 'field2' : 'field1',
+                                    entry.code
+                                  )
+                                }
+                                title="Lock this winning code and stack promo fields"
+                                className="px-2 py-0.5 bg-amber-600/30 hover:bg-amber-600 text-amber-200 hover:text-white rounded text-[11px] font-medium transition-colors flex items-center gap-1"
+                              >
+                                <Lock className="w-2.5 h-2.5" /> Lock & Stack
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     </td>

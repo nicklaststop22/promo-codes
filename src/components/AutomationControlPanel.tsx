@@ -17,15 +17,25 @@ import {
   AlertCircle,
   Wand2,
   ShieldAlert,
-  Clock
+  Clock,
+  ArrowUp,
+  ArrowDown,
+  Workflow,
+  Power,
+  Lock,
+  Unlock,
+  Layers
 } from 'lucide-react';
 import {
   SelectorConfig,
   AutomationSettings,
   QueueConfig,
   TargetSlot,
-  QueueInputMode
+  QueueInputMode,
+  SequenceActionType,
+  SequenceStep
 } from '../types';
+import { SEQUENCE_PRESETS } from '../data/presets';
 
 interface AutomationControlPanelProps {
   selectors: SelectorConfig;
@@ -51,6 +61,17 @@ interface AutomationControlPanelProps {
   totalAttemptsCount: number;
   activeCooldownSeconds?: number;
   cooldownReason?: string | null;
+  onToggleSequenceStep?: (stepId: SequenceActionType) => void;
+  onMoveSequenceStep?: (stepId: SequenceActionType, direction: 'up' | 'down') => void;
+  onApplySequencePreset?: (steps: SequenceStep[]) => void;
+  currentRunningStepId?: SequenceActionType | null;
+  lockedField1Code?: string | null;
+  lockedField2Code?: string | null;
+  onLockFieldCode?: (field: 'field1' | 'field2', code: string | null) => void;
+  autoLockWinningCodes?: boolean;
+  onToggleAutoLock?: (enabled: boolean) => void;
+  appliedField1Code?: string;
+  appliedField2Code?: string;
 }
 
 export const AutomationControlPanel: React.FC<AutomationControlPanelProps> = ({
@@ -76,7 +97,18 @@ export const AutomationControlPanel: React.FC<AutomationControlPanelProps> = ({
   currentRunningField,
   totalAttemptsCount,
   activeCooldownSeconds = 0,
-  cooldownReason = null,
+  cooldownReason,
+  onToggleSequenceStep,
+  onMoveSequenceStep,
+  onApplySequencePreset,
+  currentRunningStepId,
+  lockedField1Code = null,
+  lockedField2Code = null,
+  onLockFieldCode,
+  autoLockWinningCodes = true,
+  onToggleAutoLock,
+  appliedField1Code = '',
+  appliedField2Code = '',
 }) => {
   const fileInputRef1 = useRef<HTMLInputElement>(null);
   const fileInputRef2 = useRef<HTMLInputElement>(null);
@@ -662,19 +694,295 @@ export const AutomationControlPanel: React.FC<AutomationControlPanelProps> = ({
             </div>
           </div>
 
-          {/* Queue Execution Strategy */}
-          <div>
-            <label className="text-[11px] text-slate-300 block mb-1 font-medium">Queue Sequencing</label>
-            <select
-              value={settings.strategy}
-              onChange={(e) => onUpdateSettings({ strategy: e.target.value as any })}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
-            >
-              <option value="field1_first">Run Field 1 Queue, then Field 2</option>
-              <option value="interleaved">Interleaved (Alternating Field 1 & 2)</option>
-              <option value="field1_only">Test Field 1 (Coupon) Only</option>
-              <option value="field2_only">Test Field 2 (Promo) Only</option>
-            </select>
+          {/* ─── DISCOUNT STACKING & CODE LOCKING ─── */}
+          <div className="space-y-2.5 pt-3 border-t border-slate-800">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-200 uppercase tracking-wider">
+                <Lock className="w-3.5 h-3.5 text-amber-400" />
+                <span>Discount Stacking & Code Lock</span>
+              </div>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300">
+                Multi-Promo Stacking
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-400">
+              Lock verified discount codes in place so the automation runner iterates only on secondary fields to find stackable discounts.
+            </p>
+
+            {/* Auto-Lock Winning Toggle */}
+            <div className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-lg flex items-center justify-between">
+              <div>
+                <div className="text-xs font-medium text-slate-200">Auto-Lock Winning Hits</div>
+                <div className="text-[10px] text-slate-400">Lock valid code automatically & stack next field</div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoLockWinningCodes}
+                  onChange={(e) => onToggleAutoLock && onToggleAutoLock(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-600"></div>
+              </label>
+            </div>
+
+            {/* Field 1 Lock Card */}
+            <div className={`p-2.5 rounded-lg border text-xs flex items-center justify-between ${
+              lockedField1Code
+                ? 'bg-amber-950/30 border-amber-500/40 text-amber-200'
+                : 'bg-slate-950/60 border-slate-800 text-slate-300'
+            }`}>
+              <div className="flex items-center gap-2">
+                {lockedField1Code ? (
+                  <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                ) : (
+                  <Unlock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                )}
+                <div>
+                  <div className="font-semibold text-[11px]">
+                    Field 1: {lockedField1Code ? (
+                      <span className="font-mono text-amber-300">LOCKED ({lockedField1Code})</span>
+                    ) : appliedField1Code ? (
+                      <span className="font-mono text-emerald-300">Applied ({appliedField1Code})</span>
+                    ) : (
+                      'Unlocked (Iterating)'
+                    )}
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    {lockedField1Code ? 'Won\'t be replaced during testing' : 'Advances with Queue 1'}
+                  </div>
+                </div>
+              </div>
+              <div>
+                {lockedField1Code ? (
+                  <button
+                    onClick={() => onLockFieldCode && onLockFieldCode('field1', null)}
+                    className="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded text-[10px] font-semibold text-amber-200 transition-colors flex items-center gap-1"
+                  >
+                    <Unlock className="w-3 h-3" /> Unlock
+                  </button>
+                ) : appliedField1Code ? (
+                  <button
+                    onClick={() => onLockFieldCode && onLockFieldCode('field1', appliedField1Code)}
+                    className="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] font-semibold transition-colors flex items-center gap-1 shadow"
+                  >
+                    <Lock className="w-3 h-3" /> Lock In {appliedField1Code}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Field 2 Lock Card */}
+            <div className={`p-2.5 rounded-lg border text-xs flex items-center justify-between ${
+              lockedField2Code
+                ? 'bg-purple-950/30 border-purple-500/40 text-purple-200'
+                : 'bg-slate-950/60 border-slate-800 text-slate-300'
+            }`}>
+              <div className="flex items-center gap-2">
+                {lockedField2Code ? (
+                  <Lock className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                ) : (
+                  <Unlock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                )}
+                <div>
+                  <div className="font-semibold text-[11px]">
+                    Field 2: {lockedField2Code ? (
+                      <span className="font-mono text-purple-300">LOCKED ({lockedField2Code})</span>
+                    ) : appliedField2Code ? (
+                      <span className="font-mono text-emerald-300">Applied ({appliedField2Code})</span>
+                    ) : (
+                      'Unlocked (Iterating)'
+                    )}
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    {lockedField2Code ? 'Won\'t be replaced during testing' : 'Advances with Queue 2'}
+                  </div>
+                </div>
+              </div>
+              <div>
+                {lockedField2Code ? (
+                  <button
+                    onClick={() => onLockFieldCode && onLockFieldCode('field2', null)}
+                    className="px-2 py-1 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 rounded text-[10px] font-semibold text-purple-200 transition-colors flex items-center gap-1"
+                  >
+                    <Unlock className="w-3 h-3" /> Unlock
+                  </button>
+                ) : appliedField2Code ? (
+                  <button
+                    onClick={() => onLockFieldCode && onLockFieldCode('field2', appliedField2Code)}
+                    className="px-2 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-[10px] font-semibold transition-colors flex items-center gap-1 shadow"
+                  >
+                    <Lock className="w-3 h-3" /> Lock In {appliedField2Code}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          {/* ─── ACTION SEQUENCING PIPELINE ─── */}
+          <div className="space-y-3 pt-3 border-t border-slate-800">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                  <Workflow className="w-3.5 h-3.5 text-indigo-400" />
+                  Action Sequencing Pipeline
+                </div>
+                <div className="text-[10px] text-slate-400">
+                  Toggle steps ON / OFF & arrange in ANY order
+                </div>
+              </div>
+              <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-indigo-950/80 border border-indigo-500/30 text-indigo-300">
+                {settings.sequenceSteps.filter((s) => s.enabled).length}/{settings.sequenceSteps.length} Active
+              </span>
+            </div>
+
+            {/* Quick 1-Click Sequence Presets */}
+            <div className="space-y-1">
+              <span className="text-[10px] text-slate-400 uppercase font-medium">Quick Presets:</span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {SEQUENCE_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    onClick={() => onApplySequencePreset && onApplySequencePreset(preset.steps)}
+                    title={preset.description}
+                    className="px-2 py-1 bg-slate-950 hover:bg-slate-800 hover:text-white border border-slate-800 hover:border-indigo-500/50 rounded text-[10px] font-mono text-slate-300 transition-all flex items-center gap-1"
+                  >
+                    <span>{preset.badge}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Ordered Pipeline Step Cards */}
+            <div className="space-y-1.5">
+              {settings.sequenceSteps.map((step, idx) => {
+                const isField = step.action.startsWith('field');
+                const isRunningThis = currentRunningStepId === step.action;
+
+                return (
+                  <div
+                    key={step.id}
+                    className={`flex items-center justify-between p-2 rounded-lg border text-xs transition-all ${
+                      isRunningThis
+                        ? 'border-indigo-400 bg-indigo-950/70 ring-2 ring-indigo-500/50 shadow-lg'
+                        : step.enabled
+                        ? 'border-slate-800 bg-slate-950/80 text-slate-200'
+                        : 'border-slate-850 bg-slate-950/40 text-slate-500 opacity-60'
+                    }`}
+                  >
+                    {/* Left: Position & Step Info */}
+                    <div className="flex items-center gap-2 min-w-0">
+                      {/* Step Number Badge */}
+                      <span
+                        className={`w-5 h-5 rounded flex items-center justify-center font-mono font-bold text-[10px] shrink-0 ${
+                          step.enabled
+                            ? isField
+                              ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40'
+                              : 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40'
+                            : 'bg-slate-800 text-slate-500 border border-slate-700'
+                        }`}
+                      >
+                        {idx + 1}
+                      </span>
+
+                      {/* Step Action Name & Details */}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`font-semibold text-xs truncate ${
+                              step.enabled ? 'text-slate-100' : 'text-slate-500 line-through'
+                            }`}
+                          >
+                            {step.label}
+                          </span>
+                          <span
+                            className={`text-[9px] font-mono px-1.5 py-0.2 rounded uppercase ${
+                              isField
+                                ? 'bg-indigo-950/70 text-indigo-400 border border-indigo-800/50'
+                                : 'bg-emerald-950/70 text-emerald-400 border border-emerald-800/50'
+                            }`}
+                          >
+                            {isField ? 'Input' : 'Button'}
+                          </span>
+                          {isRunningThis && (
+                            <span className="text-[9px] font-bold text-amber-400 animate-pulse flex items-center gap-0.5">
+                              ● RUNNING
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-400 truncate">
+                          {step.sublabel} {!step.enabled && <span className="text-rose-400 font-medium">(Turned OFF)</span>}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Right Controls: Reorder Arrows & ON/OFF Toggle */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {/* Move Up */}
+                      <button
+                        onClick={() => onMoveSequenceStep && onMoveSequenceStep(step.id, 'up')}
+                        disabled={idx === 0}
+                        title="Move step earlier in sequence"
+                        className="p-1 rounded bg-slate-900 hover:bg-slate-850 disabled:opacity-20 text-slate-300 disabled:text-slate-600 border border-slate-800 transition-colors"
+                      >
+                        <ArrowUp className="w-3 h-3" />
+                      </button>
+
+                      {/* Move Down */}
+                      <button
+                        onClick={() => onMoveSequenceStep && onMoveSequenceStep(step.id, 'down')}
+                        disabled={idx === settings.sequenceSteps.length - 1}
+                        title="Move step later in sequence"
+                        className="p-1 rounded bg-slate-900 hover:bg-slate-850 disabled:opacity-20 text-slate-300 disabled:text-slate-600 border border-slate-800 transition-colors"
+                      >
+                        <ArrowDown className="w-3 h-3" />
+                      </button>
+
+                      {/* Enable / Disable Switch ("turn a button press or field off if need be") */}
+                      <button
+                        onClick={() => onToggleSequenceStep && onToggleSequenceStep(step.id)}
+                        title={step.enabled ? 'Click to turn this step OFF' : 'Click to turn this step ON'}
+                        className={`px-2 py-1 rounded text-[10px] font-bold font-mono transition-all flex items-center gap-1 border ${
+                          step.enabled
+                            ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-400 hover:bg-emerald-900/60'
+                            : 'bg-slate-900 border-slate-800 text-slate-500 hover:bg-slate-850 hover:text-slate-300'
+                        }`}
+                      >
+                        <Power className="w-2.5 h-2.5" />
+                        <span>{step.enabled ? 'ON' : 'OFF'}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Visual Pipeline Flow Summary */}
+            <div className="bg-slate-950/90 border border-slate-800 rounded-lg p-2.5">
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                Active Execution Order:
+              </span>
+              <div className="flex items-center gap-1 text-[11px] font-mono flex-wrap">
+                {settings.sequenceSteps.map((step, idx) => (
+                  <React.Fragment key={step.id}>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] ${
+                        step.enabled
+                          ? currentRunningStepId === step.action
+                            ? 'bg-amber-500 text-black font-bold animate-pulse'
+                            : 'bg-indigo-950/80 text-indigo-300 border border-indigo-500/30'
+                          : 'bg-slate-900 text-slate-600 line-through'
+                      }`}
+                    >
+                      {step.label}
+                    </span>
+                    {idx < settings.sequenceSteps.length - 1 && (
+                      <span className="text-slate-600">➔</span>
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -27,13 +27,17 @@ import {
   SelectorConfig,
   AutomationSettings,
   QueueConfig,
-  ValidationLogEntry
+  ValidationLogEntry,
+  SequenceActionType,
+  SequenceStep
 } from './types';
 import {
   STORE_PRESETS,
   POPULAR_PROMO_CODES,
   POPULAR_PROMO_WORDS,
-  POPULAR_REFERRAL_CODES
+  POPULAR_REFERRAL_CODES,
+  DEFAULT_SEQUENCE_STEPS,
+  SEQUENCE_PRESETS
 } from './data/presets';
 import { CheckoutSandbox } from './components/CheckoutSandbox';
 import { AutomationControlPanel } from './components/AutomationControlPanel';
@@ -79,6 +83,7 @@ export default function App() {
     batchCooldownAfterAttempts: 6,
     cooldownDurationMs: 4000,
     detectCaptchaAndPause: true,
+    sequenceSteps: DEFAULT_SEQUENCE_STEPS,
   });
 
   // Anti-bot, Rate Limiting & Cooldown states
@@ -158,7 +163,47 @@ export default function App() {
   const [isPaused, setIsPaused] = useState(false);
   const [currentRunningCode, setCurrentRunningCode] = useState<string | null>(null);
   const [currentRunningField, setCurrentRunningField] = useState<string | null>(null);
+  const [currentRunningStepId, setCurrentRunningStepId] = useState<SequenceActionType | null>(null);
   const [highlightedElementSelector, setHighlightedElementSelector] = useState<string | null>(null);
+
+  // Code Locking & Stacking states ("if we have a valid coupon code i want a button or option to keep that locked in and then just try new promo fields to stack discounts")
+  const [lockedField1Code, setLockedField1Code] = useState<string | null>(null);
+  const [lockedField2Code, setLockedField2Code] = useState<string | null>(null);
+  const [autoLockWinningCodes, setAutoLockWinningCodes] = useState<boolean>(true);
+
+  const handleLockFieldCode = (field: 'field1' | 'field2', code: string | null) => {
+    if (field === 'field1') {
+      setLockedField1Code(code);
+      if (code) {
+        setAppliedField1Code(code);
+        setField1InputValue(code);
+        setFeedbackMessage({
+          text: `🔒 Field 1 locked with code "${code}". Stacking mode engaged: runner will now test Field 2 to stack discounts!`,
+          type: 'success',
+        });
+      } else {
+        setFeedbackMessage({
+          text: `🔓 Field 1 unlocked. Queue 1 will resume iterating.`,
+          type: 'info',
+        });
+      }
+    } else {
+      setLockedField2Code(code);
+      if (code) {
+        setAppliedField2Code(code);
+        setField2InputValue(code);
+        setFeedbackMessage({
+          text: `🔒 Field 2 locked with code "${code}". Stacking mode engaged: runner will now test Field 1 to stack discounts!`,
+          type: 'success',
+        });
+      } else {
+        setFeedbackMessage({
+          text: `🔓 Field 2 unlocked. Queue 2 will resume iterating.`,
+          type: 'info',
+        });
+      }
+    }
+  };
 
   // Modals
   const [showExtensionModal, setShowExtensionModal] = useState(false);
@@ -349,51 +394,38 @@ export default function App() {
 
   const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
-  // Single Attempt Executor
-  const executeSingleAttempt = async (
-    targetField: 'field1' | 'field2',
-    code: string
-  ): Promise<{ isHit: boolean; savings: number }> => {
-    // Check if Captcha challenge is active and blocking
-    if (activeCaptcha && settings.detectCaptchaAndPause) {
-      setIsRunning(false);
-      setIsPaused(true);
-      isRunningRef.current = false;
-      setFeedbackMessage({
-        text: '⚠️ Captcha challenge detected! Solve challenge in browser and click Resume.',
-        type: 'error',
-      });
-      return { isHit: false, savings: 0 };
-    }
+  // Sequence Pipeline Handlers: allow any order and turning steps ON/OFF
+  const handleToggleSequenceStep = (stepId: SequenceActionType) => {
+    setSettings((prev) => ({
+      ...prev,
+      sequenceSteps: prev.sequenceSteps.map((step) =>
+        step.id === stepId ? { ...step, enabled: !step.enabled } : step
+      ),
+    }));
+  };
 
-    setCurrentRunningCode(code);
-    setCurrentRunningField(targetField === 'field1' ? 'Field 1 (Coupon)' : 'Field 2 (Promo)');
+  const handleMoveSequenceStep = (stepId: SequenceActionType, direction: 'up' | 'down') => {
+    setSettings((prev) => {
+      const list = [...prev.sequenceSteps];
+      const idx = list.findIndex((s) => s.id === stepId);
+      if (idx === -1) return prev;
+      const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (targetIdx < 0 || targetIdx >= list.length) return prev;
+      const temp = list[idx];
+      list[idx] = list[targetIdx];
+      list[targetIdx] = temp;
+      return { ...prev, sequenceSteps: list };
+    });
+  };
 
-    const beforePrice = orderTotal;
+  const handleApplySequencePreset = (presetSteps: SequenceStep[]) => {
+    setSettings((prev) => ({
+      ...prev,
+      sequenceSteps: presetSteps,
+    }));
+  };
 
-    // Visual highlight on target input
-    const inputSelector = targetField === 'field1' ? selectors.field1Input : selectors.field2Input;
-    const applySelector = targetField === 'field1' ? selectors.field1Apply : selectors.field2Apply;
-
-    setHighlightedElementSelector(inputSelector);
-    if (targetField === 'field1') {
-      setField1InputValue(code);
-    } else {
-      setField2InputValue(code);
-    }
-
-    // ─── ADJUSTABLE PRE-CLICK DELAY (Entering Field ➔ Button Press) ───
-    const jitter = settings.enableHumanJitter
-      ? Math.floor(Math.random() * (settings.maxJitterMs - settings.minJitterMs + 1)) - 40
-      : 0;
-    const effectivePreClick = Math.max(80, settings.preClickDelayMs + jitter);
-
-    setCurrentRunningField(
-      `${targetField === 'field1' ? 'Field 1' : 'Field 2'} (Hesitation: ${effectivePreClick}ms)`
-    );
-    await sleep(effectivePreClick);
-
-    // Rate Limiting velocity tracking (if interval is ultra-fast & protection off, simulate store 429)
+  const checkRateLimitingAndCooldown = async () => {
     const now = Date.now();
     recentAttemptsRef.current = [
       ...recentAttemptsRef.current.filter((t) => now - t < 4000),
@@ -422,40 +454,9 @@ export default function App() {
         setCooldownReason(null);
       }
     }
+  };
 
-    // Visual highlight on apply button
-    setHighlightedElementSelector(applySelector);
-    await sleep(120);
-
-    // Apply code
-    const result = targetField === 'field1' ? handleApplyField1(code) : handleApplyField2(code);
-
-    await sleep(settings.timeoutMs);
-    setHighlightedElementSelector(null);
-
-    // Calculate delta
-    const afterPrice = result.success ? Math.max(0, beforePrice - result.discountAmount) : beforePrice;
-    const savings = beforePrice - afterPrice;
-    const isHit = result.success && savings > 0;
-
-    // Log the entry
-    const newEntry: ValidationLogEntry = {
-      id: `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      timestamp: new Date().toLocaleTimeString(),
-      fieldTarget: targetField,
-      fieldName: targetField === 'field1' ? 'Field 1: Coupon' : 'Field 2: Promo',
-      code: code,
-      outcome: isHit ? 'SUCCESS' : 'INVALID',
-      beforePrice: beforePrice,
-      afterPrice: afterPrice,
-      savings: isHit ? savings : 0,
-      savingsPercent: beforePrice > 0 ? (savings / beforePrice) * 100 : 0,
-      message: result.message,
-    };
-
-    setLogs((prev) => [newEntry, ...prev]);
-
-    // Batch throttling cooldown pause (e.g. pause after every N attempts)
+  const checkBatchCooldown = async () => {
     attemptsSinceCooldownRef.current += 1;
     if (
       settings.batchCooldownAfterAttempts > 0 &&
@@ -472,22 +473,192 @@ export default function App() {
       setActiveCooldownSeconds(0);
       setCooldownReason(null);
     }
+  };
 
-    return { isHit, savings };
+  // Pipeline Execution Cycle: executes enabled sequence steps in the user-specified order
+  const executePipelineCycle = async (
+    code1: string,
+    code2: string
+  ): Promise<{ isHit: boolean; savings: number }> => {
+    if (activeCaptcha && settings.detectCaptchaAndPause) {
+      setIsRunning(false);
+      setIsPaused(true);
+      isRunningRef.current = false;
+      setFeedbackMessage({
+        text: '⚠️ Captcha challenge detected! Solve challenge in browser and click Resume.',
+        type: 'error',
+      });
+      return { isHit: false, savings: 0 };
+    }
+
+    let cycleHit = false;
+    let cycleSavings = 0;
+
+    const activeSteps = settings.sequenceSteps.filter((s) => s.enabled);
+    if (activeSteps.length === 0) {
+      setFeedbackMessage({
+        text: 'All pipeline steps are turned off. Enable at least one field or button.',
+        type: 'error',
+      });
+      return { isHit: false, savings: 0 };
+    }
+
+    for (let i = 0; i < activeSteps.length; i++) {
+      if (!isRunningRef.current) break;
+      while (isPausedRef.current) {
+        await sleep(200);
+        if (!isRunningRef.current) break;
+      }
+
+      const step = activeSteps[i];
+      setCurrentRunningStepId(step.action);
+
+      const jitter = settings.enableHumanJitter
+        ? Math.floor(Math.random() * (settings.maxJitterMs - settings.minJitterMs + 1)) - 40
+        : 0;
+
+      if (step.action === 'field1') {
+        setCurrentRunningCode(code1);
+        setCurrentRunningField(`Step ${i + 1}: Typing Field 1 (${code1})`);
+        setHighlightedElementSelector(selectors.field1Input);
+        setField1InputValue(code1);
+
+        // Dispatch into live DOM if element exists in playground or checkout
+        try {
+          const el = document.querySelector(selectors.field1Input) as HTMLInputElement | null;
+          if (el) {
+            el.value = code1;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        } catch (_) {}
+
+        const delay = Math.max(80, (step.delayMs || settings.preClickDelayMs) + jitter);
+        await sleep(delay);
+      } else if (step.action === 'button1') {
+        setCurrentRunningField(`Step ${i + 1}: Clicking Button 1`);
+        setHighlightedElementSelector(selectors.field1Apply);
+        await checkRateLimitingAndCooldown();
+
+        const beforePrice = orderTotal;
+        try {
+          const btn = document.querySelector(selectors.field1Apply) as HTMLElement | null;
+          if (btn) btn.click();
+        } catch (_) {}
+
+        const result = handleApplyField1(field1InputValue || code1);
+        const timeout = Math.max(100, (step.delayMs || settings.timeoutMs) + jitter);
+        await sleep(timeout);
+
+        const afterPrice = result.success ? Math.max(0, beforePrice - result.discountAmount) : beforePrice;
+        const savings = beforePrice - afterPrice;
+        const isHit = result.success && savings > 0;
+        if (isHit) {
+          cycleHit = true;
+          cycleSavings += savings;
+        }
+
+        const newEntry: ValidationLogEntry = {
+          id: `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          timestamp: new Date().toLocaleTimeString(),
+          fieldTarget: 'field1',
+          fieldName: 'Field 1: Coupon (Button 1)',
+          code: code1 || field1InputValue,
+          outcome: isHit ? 'SUCCESS' : 'INVALID',
+          beforePrice,
+          afterPrice,
+          savings: isHit ? savings : 0,
+          savingsPercent: beforePrice > 0 ? (savings / beforePrice) * 100 : 0,
+          message: result.message,
+        };
+        setLogs((prev) => [newEntry, ...prev]);
+        await checkBatchCooldown();
+      } else if (step.action === 'field2') {
+        setCurrentRunningCode(code2);
+        setCurrentRunningField(`Step ${i + 1}: Typing Field 2 (${code2})`);
+        setHighlightedElementSelector(selectors.field2Input);
+        setField2InputValue(code2);
+
+        try {
+          const el = document.querySelector(selectors.field2Input) as HTMLInputElement | null;
+          if (el) {
+            el.value = code2;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        } catch (_) {}
+
+        const delay = Math.max(80, (step.delayMs || settings.preClickDelayMs) + jitter);
+        await sleep(delay);
+      } else if (step.action === 'button2') {
+        setCurrentRunningField(`Step ${i + 1}: Clicking Button 2`);
+        setHighlightedElementSelector(selectors.field2Apply);
+        await checkRateLimitingAndCooldown();
+
+        const beforePrice = orderTotal;
+        try {
+          const btn = document.querySelector(selectors.field2Apply) as HTMLElement | null;
+          if (btn) btn.click();
+        } catch (_) {}
+
+        const result = handleApplyField2(field2InputValue || code2);
+        const timeout = Math.max(100, (step.delayMs || settings.timeoutMs) + jitter);
+        await sleep(timeout);
+
+        const afterPrice = result.success ? Math.max(0, beforePrice - result.discountAmount) : beforePrice;
+        const savings = beforePrice - afterPrice;
+        const isHit = result.success && savings > 0;
+        if (isHit) {
+          cycleHit = true;
+          cycleSavings += savings;
+        }
+
+        const newEntry: ValidationLogEntry = {
+          id: `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          timestamp: new Date().toLocaleTimeString(),
+          fieldTarget: 'field2',
+          fieldName: 'Field 2: Promo (Button 2)',
+          code: code2 || field2InputValue,
+          outcome: isHit ? 'SUCCESS' : 'INVALID',
+          beforePrice,
+          afterPrice,
+          savings: isHit ? savings : 0,
+          savingsPercent: beforePrice > 0 ? (savings / beforePrice) * 100 : 0,
+          message: result.message,
+        };
+        setLogs((prev) => [newEntry, ...prev]);
+        await checkBatchCooldown();
+      }
+    }
+
+    setHighlightedElementSelector(null);
+    setCurrentRunningStepId(null);
+    return { isHit: cycleHit, savings: cycleSavings };
   };
 
   // Main Automation Loop
   const startAutomation = async () => {
+    const activeSteps = settings.sequenceSteps.filter((s) => s.enabled);
+    if (activeSteps.length === 0) {
+      setFeedbackMessage({
+        text: 'All sequence steps are currently turned off. Turn on at least one field or button!',
+        type: 'error',
+      });
+      return;
+    }
+
     setIsRunning(true);
     setIsPaused(false);
     isRunningRef.current = true;
     isPausedRef.current = false;
 
-    // Determine sequence
     let q1 = [...queue1.codes];
     let q2 = [...queue2.codes];
     let idx1 = queue1.currentIndex;
     let idx2 = queue2.currentIndex;
+
+    const usesField1 = activeSteps.some((s) => s.action === 'field1' || s.action === 'button1');
+    const usesField2 = activeSteps.some((s) => s.action === 'field2' || s.action === 'button2');
 
     try {
       while (isRunningRef.current) {
@@ -496,59 +667,93 @@ export default function App() {
           continue;
         }
 
-        let nextItem: { field: 'field1' | 'field2'; code: string } | null = null;
+        let code1 = '';
+        let code2 = '';
+        let shouldAdvance1 = false;
+        let shouldAdvance2 = false;
 
-        if (settings.strategy === 'field1_only') {
-          if (idx1 < q1.length) {
-            nextItem = { field: 'field1', code: q1[idx1++] };
-            setQueue1((prev) => ({ ...prev, currentIndex: idx1 }));
-          }
-        } else if (settings.strategy === 'field2_only') {
-          if (idx2 < q2.length) {
-            nextItem = { field: 'field2', code: q2[idx2++] };
-            setQueue2((prev) => ({ ...prev, currentIndex: idx2 }));
-          }
-        } else if (settings.strategy === 'interleaved') {
-          if (idx1 <= idx2 && idx1 < q1.length) {
-            nextItem = { field: 'field1', code: q1[idx1++] };
-            setQueue1((prev) => ({ ...prev, currentIndex: idx1 }));
-          } else if (idx2 < q2.length) {
-            nextItem = { field: 'field2', code: q2[idx2++] };
-            setQueue2((prev) => ({ ...prev, currentIndex: idx2 }));
+        if (usesField1 && usesField2) {
+          // If Field 1 is locked in, keep locked code and do not advance Queue 1!
+          if (lockedField1Code) {
+            code1 = lockedField1Code;
+            shouldAdvance1 = false;
           } else if (idx1 < q1.length) {
-            nextItem = { field: 'field1', code: q1[idx1++] };
-            setQueue1((prev) => ({ ...prev, currentIndex: idx1 }));
+            code1 = q1[idx1];
+            shouldAdvance1 = true;
+          } else {
+            code1 = q1[q1.length - 1] || '';
           }
-        } else {
-          // Default: field1_first
-          if (idx1 < q1.length) {
-            nextItem = { field: 'field1', code: q1[idx1++] };
-            setQueue1((prev) => ({ ...prev, currentIndex: idx1 }));
+
+          // If Field 2 is locked in, keep locked code and do not advance Queue 2!
+          if (lockedField2Code) {
+            code2 = lockedField2Code;
+            shouldAdvance2 = false;
           } else if (idx2 < q2.length) {
-            nextItem = { field: 'field2', code: q2[idx2++] };
-            setQueue2((prev) => ({ ...prev, currentIndex: idx2 }));
+            code2 = q2[idx2];
+            shouldAdvance2 = true;
+          } else {
+            code2 = q2[q2.length - 1] || '';
+          }
+
+          const f1Done = lockedField1Code ? true : idx1 >= q1.length;
+          const f2Done = lockedField2Code ? true : idx2 >= q2.length;
+          if (f1Done && f2Done) {
+            break;
+          }
+        } else if (usesField1) {
+          if (lockedField1Code) {
+            code1 = lockedField1Code;
+            shouldAdvance1 = false;
+            break;
+          } else if (idx1 >= q1.length) {
+            break;
+          }
+          code1 = q1[idx1];
+          shouldAdvance1 = true;
+        } else if (usesField2) {
+          if (lockedField2Code) {
+            code2 = lockedField2Code;
+            shouldAdvance2 = false;
+            break;
+          } else if (idx2 >= q2.length) {
+            break;
+          }
+          code2 = q2[idx2];
+          shouldAdvance2 = true;
+        } else {
+          code1 = field1InputValue;
+          code2 = field2InputValue;
+        }
+
+        const { isHit } = await executePipelineCycle(code1, code2);
+
+        // Auto-Lock Winning Hit if option enabled
+        if (isHit && autoLockWinningCodes) {
+          if (appliedField1Code && !lockedField1Code) {
+            setLockedField1Code(appliedField1Code);
+          }
+          if (appliedField2Code && !lockedField2Code) {
+            setLockedField2Code(appliedField2Code);
           }
         }
 
-        if (!nextItem) {
-          // Both queues completed!
-          setIsRunning(false);
-          setCurrentRunningCode(null);
-          setCurrentRunningField(null);
-          break;
+        if (shouldAdvance1) {
+          idx1++;
+          setQueue1((prev) => ({ ...prev, currentIndex: idx1 }));
+        }
+        if (shouldAdvance2) {
+          idx2++;
+          setQueue2((prev) => ({ ...prev, currentIndex: idx2 }));
         }
 
-        const { isHit } = await executeSingleAttempt(nextItem.field, nextItem.code);
-
-        // STOP AND WAIT FOR REVIEW (Exact user requirement!)
+        // STOP AND WAIT FOR REVIEW (Stop on discount hit)
         if (isHit && settings.stopOnChange) {
           setIsRunning(false);
           setIsPaused(true);
           isRunningRef.current = false;
           setCurrentRunningCode(null);
-          // Highlight price field
           setHighlightedElementSelector(selectors.priceField);
-          setTimeout(() => setHighlightedElementSelector(null), 3000);
+          setTimeout(() => setHighlightedElementSelector(null), 3500);
           break;
         }
 
@@ -558,6 +763,7 @@ export default function App() {
       setIsRunning(false);
       setCurrentRunningCode(null);
       setCurrentRunningField(null);
+      setCurrentRunningStepId(null);
       setHighlightedElementSelector(null);
     }
   };
@@ -568,20 +774,21 @@ export default function App() {
   };
 
   const handleStepAutomation = async () => {
-    let nextItem: { field: 'field1' | 'field2'; code: string } | null = null;
+    let q1 = [...queue1.codes];
+    let q2 = [...queue2.codes];
     let idx1 = queue1.currentIndex;
     let idx2 = queue2.currentIndex;
 
-    if (activeQueueTab === 'queue1' && idx1 < queue1.codes.length) {
-      nextItem = { field: 'field1', code: queue1.codes[idx1++] };
-      setQueue1((prev) => ({ ...prev, currentIndex: idx1 }));
-    } else if (activeQueueTab === 'queue2' && idx2 < queue2.codes.length) {
-      nextItem = { field: 'field2', code: queue2.codes[idx2++] };
-      setQueue2((prev) => ({ ...prev, currentIndex: idx2 }));
-    }
+    let code1 = idx1 < q1.length ? q1[idx1] : (q1[0] || field1InputValue);
+    let code2 = idx2 < q2.length ? q2[idx2] : (q2[0] || field2InputValue);
 
-    if (nextItem) {
-      await executeSingleAttempt(nextItem.field, nextItem.code);
+    await executePipelineCycle(code1, code2);
+
+    if (idx1 < q1.length) {
+      setQueue1((prev) => ({ ...prev, currentIndex: idx1 + 1 }));
+    }
+    if (idx2 < q2.length) {
+      setQueue2((prev) => ({ ...prev, currentIndex: idx2 + 1 }));
     }
   };
 
@@ -592,6 +799,7 @@ export default function App() {
     isPausedRef.current = false;
     setCurrentRunningCode(null);
     setCurrentRunningField(null);
+    setCurrentRunningStepId(null);
     setHighlightedElementSelector(null);
     setQueue1((prev) => ({ ...prev, currentIndex: 0 }));
     setQueue2((prev) => ({ ...prev, currentIndex: 0 }));
@@ -736,6 +944,17 @@ export default function App() {
                 totalAttemptsCount={logs.length}
                 activeCooldownSeconds={activeCooldownSeconds}
                 cooldownReason={cooldownReason}
+                onToggleSequenceStep={handleToggleSequenceStep}
+                onMoveSequenceStep={handleMoveSequenceStep}
+                onApplySequencePreset={handleApplySequencePreset}
+                currentRunningStepId={currentRunningStepId}
+                lockedField1Code={lockedField1Code}
+                lockedField2Code={lockedField2Code}
+                onLockFieldCode={handleLockFieldCode}
+                autoLockWinningCodes={autoLockWinningCodes}
+                onToggleAutoLock={setAutoLockWinningCodes}
+                appliedField1Code={appliedField1Code}
+                appliedField2Code={appliedField2Code}
               />
             </div>
 
@@ -770,6 +989,14 @@ export default function App() {
                   rateLimitActive={rateLimitActive}
                   rateLimitCooldownSeconds={rateLimitCooldownSeconds}
                   onTriggerSimulatedChallenge={() => setActiveCaptcha(true)}
+                  sequenceSteps={settings.sequenceSteps}
+                  onToggleSequenceStep={handleToggleSequenceStep}
+                  onMoveSequenceStep={handleMoveSequenceStep}
+                  onApplySequencePreset={handleApplySequencePreset}
+                  currentRunningStepId={currentRunningStepId}
+                  lockedField1Code={lockedField1Code}
+                  lockedField2Code={lockedField2Code}
+                  onLockFieldCode={handleLockFieldCode}
                 />
               </div>
 
@@ -782,6 +1009,7 @@ export default function App() {
                     if (field === 'field1') handleApplyField1(code);
                     else handleApplyField2(code);
                   }}
+                  onLockCode={handleLockFieldCode}
                 />
               </div>
             </div>
@@ -819,6 +1047,14 @@ export default function App() {
               rateLimitActive={rateLimitActive}
               rateLimitCooldownSeconds={rateLimitCooldownSeconds}
               onTriggerSimulatedChallenge={() => setActiveCaptcha(true)}
+              sequenceSteps={settings.sequenceSteps}
+              onToggleSequenceStep={handleToggleSequenceStep}
+              onMoveSequenceStep={handleMoveSequenceStep}
+              onApplySequencePreset={handleApplySequencePreset}
+              currentRunningStepId={currentRunningStepId}
+              lockedField1Code={lockedField1Code}
+              lockedField2Code={lockedField2Code}
+              onLockFieldCode={handleLockFieldCode}
             />
           </div>
         )}
@@ -833,6 +1069,7 @@ export default function App() {
                 if (field === 'field1') handleApplyField1(code);
                 else handleApplyField2(code);
               }}
+              onLockCode={handleLockFieldCode}
             />
           </div>
         )}

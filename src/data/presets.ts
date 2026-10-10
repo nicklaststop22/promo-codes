@@ -1,4 +1,130 @@
-import { StorePreset } from '../types';
+import { StorePreset, SequenceStep } from '../types';
+
+export const DEFAULT_SEQUENCE_STEPS: SequenceStep[] = [
+  {
+    id: 'field1',
+    action: 'field1',
+    label: 'Field 1',
+    sublabel: 'Enter Coupon (Queue 1)',
+    enabled: true,
+  },
+  {
+    id: 'button1',
+    action: 'button1',
+    label: 'Button 1',
+    sublabel: 'Click Apply Coupon',
+    enabled: true,
+  },
+  {
+    id: 'field2',
+    action: 'field2',
+    label: 'Field 2',
+    sublabel: 'Enter Promo (Queue 2)',
+    enabled: true,
+  },
+  {
+    id: 'button2',
+    action: 'button2',
+    label: 'Button 2',
+    sublabel: 'Click Apply Promo',
+    enabled: true,
+  },
+];
+
+export interface SequencePreset {
+  id: string;
+  name: string;
+  badge: string;
+  description: string;
+  steps: SequenceStep[];
+}
+
+export const SEQUENCE_PRESETS: SequencePreset[] = [
+  {
+    id: 'standard',
+    name: 'Standard 2-Step Flow',
+    badge: 'F1 ➔ B1 ➔ F2 ➔ B2',
+    description: 'Types Field 1, clicks Button 1, then types Field 2, clicks Button 2.',
+    steps: [
+      { id: 'field1', action: 'field1', label: 'Field 1', sublabel: 'Enter Coupon (Queue 1)', enabled: true },
+      { id: 'button1', action: 'button1', label: 'Button 1', sublabel: 'Click Apply Coupon', enabled: true },
+      { id: 'field2', action: 'field2', label: 'Field 2', sublabel: 'Enter Promo (Queue 2)', enabled: true },
+      { id: 'button2', action: 'button2', label: 'Button 2', sublabel: 'Click Apply Promo', enabled: true },
+    ],
+  },
+  {
+    id: 'dual_single_button',
+    name: 'Dual Input, Single Button',
+    badge: 'F1 ➔ F2 ➔ B1',
+    description: 'Types both Field 1 & Field 2 first, then clicks Button 1 (Button 2 disabled).',
+    steps: [
+      { id: 'field1', action: 'field1', label: 'Field 1', sublabel: 'Enter Coupon (Queue 1)', enabled: true },
+      { id: 'field2', action: 'field2', label: 'Field 2', sublabel: 'Enter Promo (Queue 2)', enabled: true },
+      { id: 'button1', action: 'button1', label: 'Button 1', sublabel: 'Click Apply Coupon', enabled: true },
+      { id: 'button2', action: 'button2', label: 'Button 2', sublabel: 'Click Apply Promo', enabled: false },
+    ],
+  },
+  {
+    id: 'field1_only',
+    name: 'Field 1 Only (Coupon)',
+    badge: 'F1 ➔ B1 only',
+    description: 'Only runs Field 1 and Button 1. Field 2 and Button 2 are turned OFF.',
+    steps: [
+      { id: 'field1', action: 'field1', label: 'Field 1', sublabel: 'Enter Coupon (Queue 1)', enabled: true },
+      { id: 'button1', action: 'button1', label: 'Button 1', sublabel: 'Click Apply Coupon', enabled: true },
+      { id: 'field2', action: 'field2', label: 'Field 2', sublabel: 'Enter Promo (Queue 2)', enabled: false },
+      { id: 'button2', action: 'button2', label: 'Button 2', sublabel: 'Click Apply Promo', enabled: false },
+    ],
+  },
+  {
+    id: 'field2_only',
+    name: 'Field 2 Only (Promo)',
+    badge: 'F2 ➔ B2 only',
+    description: 'Only runs Field 2 and Button 2. Field 1 and Button 1 are turned OFF.',
+    steps: [
+      { id: 'field2', action: 'field2', label: 'Field 2', sublabel: 'Enter Promo (Queue 2)', enabled: true },
+      { id: 'button2', action: 'button2', label: 'Button 2', sublabel: 'Click Apply Promo', enabled: true },
+      { id: 'field1', action: 'field1', label: 'Field 1', sublabel: 'Enter Coupon (Queue 1)', enabled: false },
+      { id: 'button1', action: 'button1', label: 'Button 1', sublabel: 'Click Apply Coupon', enabled: false },
+    ],
+  },
+  {
+    id: 'reverse_flow',
+    name: 'Reverse (Field 2 First)',
+    badge: 'F2 ➔ B2 ➔ F1 ➔ B1',
+    description: 'Runs Field 2 and Button 2 first, followed by Field 1 and Button 1.',
+    steps: [
+      { id: 'field2', action: 'field2', label: 'Field 2', sublabel: 'Enter Promo (Queue 2)', enabled: true },
+      { id: 'button2', action: 'button2', label: 'Button 2', sublabel: 'Click Apply Promo', enabled: true },
+      { id: 'field1', action: 'field1', label: 'Field 1', sublabel: 'Enter Coupon (Queue 1)', enabled: true },
+      { id: 'button1', action: 'button1', label: 'Button 1', sublabel: 'Click Apply Coupon', enabled: true },
+    ],
+  },
+  {
+    id: 'button_first',
+    name: 'Reveal First (Button ➔ Field)',
+    badge: 'B1 ➔ F1 ➔ B2 ➔ F2',
+    description: 'Clicks button first (e.g. accordion/modal unlock), then fills field.',
+    steps: [
+      { id: 'button1', action: 'button1', label: 'Button 1', sublabel: 'Click Button 1 First', enabled: true },
+      { id: 'field1', action: 'field1', label: 'Field 1', sublabel: 'Enter Coupon (Queue 1)', enabled: true },
+      { id: 'button2', action: 'button2', label: 'Button 2', sublabel: 'Click Button 2', enabled: true },
+      { id: 'field2', action: 'field2', label: 'Field 2', sublabel: 'Enter Promo (Queue 2)', enabled: true },
+    ],
+  },
+  {
+    id: 'fields_only_no_buttons',
+    name: 'Type Only (No Button Press)',
+    badge: 'F1 ➔ F2 (Buttons OFF)',
+    description: 'Fills both fields without pressing buttons (both button clicks turned OFF).',
+    steps: [
+      { id: 'field1', action: 'field1', label: 'Field 1', sublabel: 'Enter Coupon (Queue 1)', enabled: true },
+      { id: 'field2', action: 'field2', label: 'Field 2', sublabel: 'Enter Promo (Queue 2)', enabled: true },
+      { id: 'button1', action: 'button1', label: 'Button 1', sublabel: 'Click Apply Coupon', enabled: false },
+      { id: 'button2', action: 'button2', label: 'Button 2', sublabel: 'Click Apply Promo', enabled: false },
+    ],
+  },
+];
 
 export const POPULAR_PROMO_CODES = [
   'SAVE10',
@@ -70,6 +196,7 @@ export const STORE_PRESETS: StorePreset[] = [
   {
     id: 'apex_gear',
     name: 'Apex Gear Outfitters',
+    baseUrl: 'https://shop.apexgear.com',
     category: 'Outdoor & Performance Gear',
     description: 'Outdoor apparel & gear checkout with separate Coupon and VIP Ambassador promo fields.',
     shippingCost: 15.0,
@@ -77,6 +204,14 @@ export const STORE_PRESETS: StorePreset[] = [
       { id: 'item-1', name: 'Alpinist Waterproof Rucksack 45L', price: 120.0, quantity: 1, category: 'Packs' },
       { id: 'item-2', name: 'Ultralight Vacuum Flask 750ml', price: 35.0, quantity: 1, category: 'Hydration' },
       { id: 'item-3', name: 'Thermal Grip Trail Gloves (Pair)', price: 34.0, quantity: 1, category: 'Apparel' },
+    ],
+    catalog: [
+      { id: 'item-1', name: 'Alpinist Waterproof Rucksack 45L', price: 120.0, quantity: 1, category: 'Packs' },
+      { id: 'item-2', name: 'Ultralight Vacuum Flask 750ml', price: 35.0, quantity: 1, category: 'Hydration' },
+      { id: 'item-3', name: 'Thermal Grip Trail Gloves (Pair)', price: 34.0, quantity: 1, category: 'Apparel' },
+      { id: 'item-4', name: 'Glacier Carbon Trekking Poles (Pair)', price: 58.0, quantity: 1, category: 'Gear' },
+      { id: 'item-5', name: 'All-Weather Bivvy Sleeping Bag', price: 145.0, quantity: 1, category: 'Camp' },
+      { id: 'item-6', name: 'Solar Recharging Camp Lantern 300lm', price: 42.0, quantity: 1, category: 'Lighting' },
     ],
     rules: {
       SAVE20: { type: 'percent', value: 20, description: '20% off entire order', field: 'field1' },
@@ -102,6 +237,7 @@ export const STORE_PRESETS: StorePreset[] = [
   {
     id: 'luxe_cosmetique',
     name: 'Luxe Botanicals',
+    baseUrl: 'https://luxe-botanicals.store',
     category: 'Beauty & Skincare',
     description: 'Clean cosmetic boutique testing Cart Voucher and Loyalty Club code fields.',
     shippingCost: 8.5,
@@ -109,6 +245,13 @@ export const STORE_PRESETS: StorePreset[] = [
       { id: 'item-a', name: 'Rosehip Botanical Restorative Serum 50ml', price: 92.0, quantity: 1, category: 'Skincare' },
       { id: 'item-b', name: 'Ceramide Moisture Barrier Crème', price: 68.0, quantity: 1, category: 'Skincare' },
       { id: 'item-c', name: 'Pure Silk Sleeping Mask (Midnight)', price: 45.0, quantity: 1, category: 'Accessories' },
+    ],
+    catalog: [
+      { id: 'item-a', name: 'Rosehip Botanical Restorative Serum 50ml', price: 92.0, quantity: 1, category: 'Skincare' },
+      { id: 'item-b', name: 'Ceramide Moisture Barrier Crème', price: 68.0, quantity: 1, category: 'Skincare' },
+      { id: 'item-c', name: 'Pure Silk Sleeping Mask (Midnight)', price: 45.0, quantity: 1, category: 'Accessories' },
+      { id: 'item-d', name: 'Botanical Cleansing Oil 150ml', price: 38.0, quantity: 1, category: 'Skincare' },
+      { id: 'item-e', name: 'Green Tea Hydrating Mist & Essence', price: 52.0, quantity: 1, category: 'Skincare' },
     ],
     rules: {
       GLOW25: { type: 'percent', value: 25, description: '25% Glow Member discount', field: 'field1' },
@@ -131,12 +274,19 @@ export const STORE_PRESETS: StorePreset[] = [
   {
     id: 'devcloud_saas',
     name: 'DevCloud Infrastructure Pro',
+    baseUrl: 'https://devcloud.io',
     category: 'Developer Tools & SaaS',
     description: 'Annual cloud subscription checkout with Promo Discount and Startup Grant voucher slots.',
     shippingCost: 0,
     items: [
       { id: 'saas-1', name: 'DevCloud Cluster Pro (Annual Billing)', price: 360.0, quantity: 1, category: 'Subscription' },
       { id: 'saas-2', name: 'Edge CDN Add-on (10M Invocations)', price: 120.0, quantity: 1, category: 'Add-ons' },
+    ],
+    catalog: [
+      { id: 'saas-1', name: 'DevCloud Cluster Pro (Annual Billing)', price: 360.0, quantity: 1, category: 'Subscription' },
+      { id: 'saas-2', name: 'Edge CDN Add-on (10M Invocations)', price: 120.0, quantity: 1, category: 'Add-ons' },
+      { id: 'saas-3', name: 'Dedicated Postgres HA Database', price: 180.0, quantity: 1, category: 'Databases' },
+      { id: 'saas-4', name: '24/7 Dedicated Support Engineering SLA', price: 240.0, quantity: 1, category: 'Support' },
     ],
     rules: {
       STARTUP30: { type: 'percent', value: 30, description: '30% Early Stage Startup discount', field: 'field1' },
