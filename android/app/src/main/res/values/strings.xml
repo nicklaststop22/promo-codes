@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Promo Codes Applier</string>
+    <string name="title_activity_main">Promo Codes Applier</string>
+    <string name="package_name">com.promostudio.applier</string>
+    <string name="custom_url_scheme">com.promostudio.applier</string>
+</resources>
