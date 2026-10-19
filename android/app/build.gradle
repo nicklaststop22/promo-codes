@@ -32,7 +32,9 @@ android {
     }
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            if (keystoreFile.exists() && keystoreProps['storeFile'] != null) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
@@ -59,11 +61,9 @@ dependencies {
 
 apply from: 'capacitor.build.gradle'
 
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
-        apply plugin: 'com.google.gms.google-services'
-    }
-} catch(Exception e) {
+def servicesJSON = file('google-services.json')
+if (servicesJSON.exists()) {
+    apply plugin: 'com.google.gms.google-services'
+} else {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
 }
